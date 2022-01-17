@@ -1,0 +1,43 @@
+﻿Names Default To Here(1);
+
+Define Class("IconHandler",
+	node_icons = [
+		"folder" => "ProjectFolder",
+		"jmp" => "JMP",
+		"jsl" => "ScriptFile",
+		"jmpaddin" => "JMPAddin",
+		"jrn" => "JournalFile",
+		"jrp" => "ReportFile",
+		"jmpprj" => "Project",
+		"jmpappsource" => "AppFile",
+		"sql" => "QueryBuilder",
+		"htm" => "InternetOpen",
+		"html" => "InternetOpen",
+		"sql" => "QueryBuilder",
+		"jpg" => "Chart",
+		"jpeg" => "Chart",
+		"png" => "Chart",
+		"txt" => "TextImport",
+		"py" => "TextAnalysis",
+		"xls" => "ExcelImport",
+		"xlsx" => "ExcelImport",
+		"pptx" => "Missing",
+		"pdf" => "PDFImport",
+		"xml" => "XMLImport",
+		"json" => "JSONImport",
+		"csv" => "StructuralEquationModelsReorganize",
+		=> "Missing" //initialize empty value
+	];
+	_init_ = Method({},
+	);
+
+	set_node_icon = Method({str, node},
+		file_type = Word(-1, str, ".");
+		If(file_type == str,
+			node << Set Icon(node_icons["folder"]);
+			node << Set Expanded Icon("ProjectOpenFolder");
+		,
+			node << Set Icon(node_icons[file_type]);
+		);
+	);
+);

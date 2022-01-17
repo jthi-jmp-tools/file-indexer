@@ -1,0 +1,30 @@
+{
+	"GUI":{
+		"use_gui":1,
+		"window_title": "File Indexer",
+		"window_icon": "WinFileOpenSelected",
+		"keep_dialog_open": 0
+	},
+	"directory_settings": {
+		"list": [
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Apps/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Automation/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Dashboards/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Data/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Images/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Import Data/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Projects/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/Scripts/",
+			"C:/Program Files/SAS/JMPPRO/16/Samples/STIPS/"
+		],
+		"names": [
+			"Apps", "Automation", "Dashboards", "Data", "Images", "Import Data", "Projects", "Scripts", "STIPS"
+		]
+	},
+	"max_depth": 7,
+	"file_size_without_alarm": 100,
+	"use_os_default_program": 1,
+	"open_tables_as_copy": 1,
+	"open_scripts_always_in_new_window": 1,
+	"add_files_to_recent_files": 0	
+}

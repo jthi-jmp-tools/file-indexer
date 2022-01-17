@@ -1,0 +1,46 @@
+﻿Names Default To Here(1);
+
+Define Class("FileHandler",
+	_init_ = Method({});
+
+	get_file_list = Method({directory_paths},
+		path_list = Transform Each({dir_path}, directory_paths, Files In Directory(dir_path, recursive(1)));
+		return(path_list);
+	);
+	
+	get_list_dt = Method({directory_paths},
+		list_files = get_file_list(directory_paths);
+		dt = New Table("FileListing",
+			New Column("FullPath", Character, Nominal),
+			New Column("BaseDir", Character, Nominal),
+			New Column("Path", Character, Nominal),
+			invisible
+		);
+		depth_columns = {};
+		path_values = {};
+		For Each({file_list}, list_files, Insert Into(path_values, file_list));
+		dt << Add Rows(N Items(path_values));
+		dt[0, "Path"] = path_values;
+		
+		base_dir_values = {};
+		For(i = 1, i <= N Items(directory_paths), i++,
+			Insert Into(base_dir_values, Repeat(List(directory_paths[i]), N Items(list_files[i])))
+		);
+		dt[0, "BaseDir"] = base_dir_values;
+		
+		Column(dt, "FullPath") << Set Each Value(:BaseDir || :Path);
+		dt << New Column("FileName", Character, Nominal, <<Set Each Value(Word(-1, :Path, "/")));
+		Column(dt, "Path") << Set Each Value(Substitute(:Path, :Filename, ""));
+		dt << New Column("MaxDepth", Numeric, Ordinal, <<Set Each Value(N Items(Words(:Path, "/"))));
+		max_depth = 0;
+		For(i = 1, i <= Col Max(:MaxDepth), i++,
+			new_col = dt << New Column("DirectoryDepth_" || Char(i), Character, Nominal, <<Set Each Value(Word(i, :Path, "/")));
+			max_depth = i;
+			Insert Into(depth_columns, new_col << get name);
+		);
+		return(Eval List({dt, depth_columns}));
+	);
+);
+
+FH = New Object(FileHandler());
+FH << Lock Class;

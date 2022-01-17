@@ -1,0 +1,162 @@
+﻿Names Default To Here(1);
+
+//file_size_without_alarm
+//use_os_default_program
+//open_tables_as_copy
+//open_scripts_always_in_new_window
+//add_files_to_recent_files
+
+Define Class("NodeFunctions",
+	file_size_without_alarm = 100; //MB
+	use_os_default_program = 1;
+	open_tables_as_copy = 1;
+	open_scripts_always_in_new_window = 1;
+	add_files_to_recent_files = 0;
+
+	_init_ = Method({});
+
+	get_node_path = Method({tree, node},
+		path = {};
+		While(!Is Empty(node),
+			label = node << get data;
+			new_path = Regex(label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
+			Insert Into(path, new_path, 1); //if has (number) in the end -> replace with ""
+			node = node << parent;
+		);
+		path = Concat Items(path, "/");
+		Substitute Into(path, "//", "/"); //might be a bit risky, but...
+		return(path);
+	);
+
+	//open path / open node path?
+	open_node_path = Method({tree, node},
+		path = get_node_path(tree, node);
+		If(node << Is Leaf(), 
+			//Open(path);
+			open_node_file(tree, node)
+		,
+			Open(path); //Folder
+		);
+	);
+
+	open_node_directory = Method({tree, node},
+		path = get_node_path(tree, node);
+		If(node << Is Leaf(),
+			dir_path = Left(path, Contains(path, "/", -1)),
+			dir_path = path
+		);
+		Open(dir_path);
+	);
+
+	open_node_file = Method({tree, node},
+		path = get_node_path(tree, node);
+		file_name = node << get data;
+		file_size = Round(File Size(path) / (1024 * 1024), 3);
+		//file_size_without_alarm = 100;
+		file_extension = Substr(Lowercase(path), Contains(Lowercase(path), ".", -1));
+		If(file_size > file_size_without_alarm & file_extension == ".jmp",
+			text = Eval Insert(
+				"File ^file_name^ (^file_size^ MB)is larger than
+	the limit of ^file_size_without_alarm^MB.
+	Opening file may take long time.
+	Press OK to continue, cancel to stop.
+	"
+			);
+			//new window... modal... alert.... ok/cancel...
+			nw = New Window("Opening large file...",
+				<<modal,
+				<<show toolbars(0),
+				<<Show Menu(0),
+				<<Set Window Icon("Warning"),
+				H List Box(Icon Box("WinFileNewDt"), Spacer Box(size(10, 1)), V Center Box(Text Box(text))),
+				H List Box(Button Box("OK"), Button Box("Cancel"))
+			);
+			If(nw["Button"] != 1,
+				Return();
+			,
+				Open(path);
+				return();
+			);
+		);
+		
+		If(file_extension == ".jmp",
+			Open(path);
+		,file_extension == ".jsl",
+			New Window("Window Title", <<Script, Load Text File(path)); //https://www.jmp.com/support/help/en/16.2/#page/jmp/scripting-the-script-editor.shtml
+		,file_extension == ".jmpaddin",
+			Show("EXTENSION....");
+		, Contains({".jrn", ".jrp", ".jmpprj", ".jmpappsource"}, file_extension), //rest of JMP file extensions...
+			Open(path)
+		, //else check for use_os_default_program 0/1
+			//Run Program(Executable("PowerShell.exe"), Options(Eval Insert("\[-Command "& {Start-Process '^path^'}"]\")), Read function("text"));
+			Open(path); //JMP is able to open quite a many different file types
+		);
+	);
+	//https://community.jmp.com/t5/JSL-Cookbook/Open-a-file-in-the-operating-system-default-program/ta-p/246050
+
+	open_node_file_columns = Method({tree, node},
+		path = get_node_path(tree, node);
+		If(Ends With(Lowercase(path), ".jmp"),
+			col_list = Open(path, "Column Names Only");
+			dt_filter = New Table("to_filter", invisible);
+			For Each({new_col}, col_list, dt_filter << New Column(new_col, Character, "None"));
+			cols_to_open = {};
+			dt_name = node << get data;
+			nw = New Window("Select columns to open",
+				<<show toolbars(0),
+				<<Show Menu(0),
+				<<modal,
+				<<return result,
+				<<Set Window Icon("ActivateDataTable"),
+				V List Box(
+					align("right"),
+					Border Box(Sides(15),
+						H Center Box(Text Box("Select columns to open from datatable:" || dt_name, <<Font Color("Blue"), <<Set Wrap(500)))
+					),
+					H List Box(
+						Panel Box("Select Character Columns", flc = Filter Col Selector(dt_filter, nlines(10))),
+						((flc << Parent) << Xpath("//IfBox")) << set(1), //enable filtering to filter col selector...
+						Panel Box("Cast Selected Columns",
+							Lineup Box(N Col(2),
+								Button Box("Add", clb << Append((flc << get selected))),
+								clb = Col List Box(Data Table(dt_filter << get name), min items(1), nlines(10), <<Modeling Type({"Any"})),
+								Button Box("Clear Selection", clb << Clear selection),
+								Button Box("Remove Selected", clb << Remove Selected)
+							)
+						),
+						Panel Box("Actions", V List Box(Button Box("OK", cols_to_open = clb << get items), Button Box("Cancel")))
+					)
+				)
+			);
+			Try(Close(dt_filter, no save));
+			If(nw["Button"] != 1 | N Items(cols_to_open) == 0,
+				Return()
+			);
+			Eval(Eval Expr(Open(path, Select Columns(Expr(cols_to_open)))));
+		);
+	);
+
+
+	get_node_file_info = Method({tree, node},
+		path = get_node_path(tree, node);
+		file_name = node << get data;
+		file_modified = As Date(Last Modification Date(path));
+		file_size = Round(File Size(path) / (1024 * 1024), 2);
+		node << Set Tip(Eval Insert(
+"File: ^file_name^
+File last modified: ^file_modified^
+File size: ^file_size^ MB"));
+		node << Set Font Style("Bold");
+		//set value to... display box???
+	);
+
+	get_node_file_info_table = Method({tree, node},
+		path = get_node_path(tree, node);
+		node << Set Tip("AAAAAAAAA");
+		node << Set Font Style("Bold");
+		//set value to... display box???
+	);
+);
+
+NH = New Object(NodeFunctions());
+NH << Lock Class;

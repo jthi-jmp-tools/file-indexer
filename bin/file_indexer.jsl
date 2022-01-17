@@ -1,0 +1,247 @@
+﻿Names Default To Here(1);
+
+// SEARCH FUNKTIO PUUTTUU...
+/*
+before_cur_tree = ((((teb << parent) << parent) << sib));
+cur_tree = before_cur_tree << sib;
+cur_tree_nodes = cur_tree << get roots;
+old_folder = cur_tree_nodes[1] << get data;
+cur_tree << Remove Root(cur_tree_nodes[1]);
+rows = dt << get rows where(Contains(lowercase(:FileName), "body") & :BaseDir == old_folder);
+dt_temp = dt << Subset(Rows(rows));
+new_tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., cur_tree, data_to_add = old_folder); 
+Close(dt_temp, no save);
+DTH:expand_tree(new_tree);
+*/
+
+//possibility to create file list once a day (or when refresh is pressed)
+//Main Menu("Quick Open");
+//Main Menu("JMP Help");
+//Main Menu("Sample Data");
+
+//If File Writable -> open as copy
+
+// some sort of app header
+// 
+// OPEN HELP...
+// SEARCH ALPHABETICALLY
+// better icons
+// settings and help buttons
+// recent files sivulle???
+// launch recent files... haku
+// window list sivulle...
+// oma välilehti, johon haetaan recent files
+
+Include("bin/DirectoryTreeHandler.jsl"); //DTH
+Include("bin/FileHandler.jsl"); //FH
+Include("bin/NodeFunctions.jsl"); //NH
+
+aa_settings = Load Text File("settings.json", JSON);
+gui_settings = aa_settings["GUI"];
+
+dir_settings = aa_settings["directory_settings"];
+
+{dt, depth_columns} = FH:get_list_dt(dir_settings["list"]);
+
+//reducing depth_columns can be used to reduce the max depth
+col_list = depth_columns || {"FileName"};
+
+nw = New Window(gui_settings["window_title"] || " ("||char(NRows(dt))||")",
+	Show Menu(1), Show Toolbars(0),
+	<< Set Window Icon(gui_settings["window_icon"]),
+	V List Box(
+		Text Box("DO SOMETHING HERE", << Set Font Size(20)),
+		H List Box(
+			Lineup Box(N Col(1),
+				spacer box(size(0,20)),
+				Button Box("Help"),
+				Button Box("Help"),
+				Button Box("Help"),
+				Button Box("Help"),
+			),
+			tb = Tab Box()
+		)
+	);
+	
+
+);
+
+nw << On Close(
+	Try(
+		close(dt, no save), show(exception_msg)
+	)
+);
+
+Summarize(dt, uniq_dirs = by(:BaseDir));
+
+For Each({folder, idx}, uniq_dirs,
+	r = Loc(dt[0, "BaseDir"], folder);
+	dt_temp = dt << Subset(rows(r));
+
+//WHERE TO ADD AMOUNT OF ROWS?
+//HOW TO HANDLE PATHS BECAUSE NO DEFAULT PATH IS GIVEN ANYMORE?
+//ADD BASEDIR TO EACH OF THE DATAS?
+
+	tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), data_to_add = folder);
+	Close(dt_temp, no save);
+	
+	tb << Add(
+		dir_settings["names"][idx],
+		H List Box(
+			V List Box(
+				Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
+					H List Box(
+						align("center"),
+						teb = Text Edit Box("", <<Set Min Size(100, -1), <<Set Max Size(450, -1), <<Set Auto Stretching(1, 0), <<Set Hint("Filter...")),
+						Button Box("", <<Set Icon("Refresh")),
+						Button Box("", <<Set Icon("TabCloseActive")),
+
+					)
+				),
+				Text Box(Char(N Items(r)) || " files matched in folder: " || folder, <<set Wrap(600)),
+				tree
+			)/*,
+			Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
+				V List Box(
+					Text Box("File Stats Could Be Show Here"),
+					Text Box("Or extra filters"),
+					Text Box("Possibly by file-type"),
+					Text Box("Also could list amount of different file types")
+				)
+			)*/
+		)
+	);
+	
+	tree << Set Node Double Click Script(
+		Function({tree, node},
+			If(node << Is Leaf(),
+				If(Is Control Key(),
+					NH:open_node_file_columns(tree, node);
+//			,Is Alt Key(),
+					//			,Is Shift Key(),
+				, //else
+					NH:open_node_path(tree, node)
+				);
+			//is shift...is alt...is ctrl
+				//get info...
+			
+			, //else folder
+				If(
+					Is Shift Key() | Is Alt Key(),
+						If(tree << Is Expanded(node),
+							Show("collapse");
+							DTH:collapse_child(tree, node);
+						,
+							Show("expand");
+							DTH:expand_child(tree, node);
+						),
+					Is Control Key(), open_node_path(tree, node)
+				)
+			);
+		)
+	);
+	
+	tree << Set Node Select Script(Function({tree, node}, Try(If(node << Is Leaf, NH:get_node_file_info(tree, node)))));
+
+//empty spaceen -> expand/collapse tree... ei muuta
+	
+	tree << Set Context Menu Script(
+		Function({thistree, thisnode},
+			If(Is Empty(thisnode),
+				{/*Whole Tree Menu*/
+				{"Expand Tree", "", Function({tree, node},
+					DTH:expand_tree(tree)
+				)}, {"Collapse Tree", "", Function({tree, node},
+					DTH:collapse_tree(tree)
+				)}}
+			,
+				{/*node menu*/
+				{"Open", "", Function({tree, node},
+					NH:open_node_path(tree, node)
+				)}, {"Open with columns", "", Function({tree, node},
+					NH:open_node_file_columns(tree, node)
+				)}, {"Copy Path to Clipboard", "", Function({tree, node},
+					Set Clipboard(get_node_path(tree, node))
+				)}, {"Open Directory", "", Function({tree, node},
+					NH:open_node_directory(tree, node)
+				)}, {"Get file info", "", Function({tree, node},
+					NH:get_node_file_info(tree, node)
+				)}, {"", "separator", ""}, {"Expand Node", "", Function({tree, node},
+					DTH:expand_child(tree, node)
+				)}, {"Collapse Node", "", Function({tree, node},
+					DTH:collapse_child(tree, node)
+				)}, //jos koittaa collapseta leaffia -> collapsee parent node
+				{"", "separator", ""}, {"Expand All", "", Function({tree, node},
+					DTH:expand_tree(tree)
+				)}, {"Collapse All", "", Function({tree, node},
+					DTH:collapse_tree(tree)
+				)}, {"", "separator", ""}, {"Copy to $TEMP", "", Function({tree, node},
+					Show("Copy to $TEMP")
+				)}, {"Copy to $Desktop", "", Function({tree, node},
+					Show("Copy to $Desktop")
+				)}, {"Open as Copy", "", Function({tree, node},
+					Show("Open as Copy")
+				)}, {"Open in Script Editor", "", Function({tree, node},
+					Show("Open in Script Editor")
+				)}}
+			)
+		)
+	);
+//	root_node = (tree << get roots)[1];
+	//	set_node_icon("folder", root_node);
+	//	tree << Expand(root_node); //to expand root
+);
+
+tb << Set Selected(1);
+
+/*
+
+/*
+Names Default To Here(1);
+
+start = HP Time();
+b = Run Program(
+	Executable("PowerShell.exe"), 
+	Options("\[gci -Path 'C:\Users\jarmo\Documents\Code'-rec -File | select Length,LastWriteTime,FullName | out-string -width 4096]\"), 
+	ReadFunction("text")
+);
+
+b = Run Program(
+	Executable("cmd.exe"), 
+	Options({"/c", "dir", "/s", "C:\Users\jarmo\Documents\Code"}), 
+	ReadFunction("text")
+);
+
+Show(HP Time() - start);
+//https://community.jmp.com/t5/Discussions/How-to-use-JSL-to-process-the-txt-files-into-tabular-data/td-p/232113
+//there is sime blob solution here most likely...
+
+ps_rows = Words(b, "\!N");
+dt = New Table("AA",
+	New Column("Size", Character),
+	New Column("Time", Character),
+	New Column("Path", Character),
+);
+For EacH({row}, ps_rows,
+	a = Regex Match(Collapse Whitespace(row), "(\d*) (.*? .*? .*?) (.*)");
+	Try(
+		dt << Add Rows({Size = a[2], Time = a[3], Path = a[4]}),
+		show(exception_msg)
+	);
+);
+Show(HP Time() - start);
+wait(0);
+start = HP Time();
+
+
+z = Files In Directory("C:\Users\jarmo\Documents\Code", recursive(1));
+New Table("AA",
+	New Column("AA", Character, Values(z))
+);
+Show(HP Time() - start);
+
+
+//dir /s/a:-d-h-s /t:w /n C:\Users\jarmo\Documents\Code
+//https://stackoverflow.com/questions/7196937/how-to-speed-up-powershell-get-childitem-over-unc
+*/
+*/

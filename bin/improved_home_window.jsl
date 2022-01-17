@@ -1,0 +1,59 @@
+Names Default To Here(1);
+
+//Improved JMP Start Window
+
+folder_depth = "";
+
+get_jmp_recent_file_list = function({rp_registry_str}, {},
+	rp_list = Words(rp_registry_str, "\!N");
+
+	ret_list = {};
+	For Each({file_path}, rp_list,
+		file_list = Regex Match(Collapse Whitespace(file_path), "^(File\d*) (.+?) (.+?)$");
+		If(N Items(file_list),
+			If(Starts With(file_list[2], "File"),
+				Insert Into(ret_list, file_list[4]);
+			);		
+		)
+	);
+	return(ret_list);
+);
+
+get_jmp_pinned_file_list = function({rp_registry_str}, {},
+	rp_list = Words(rp_registry_str, "\!N");
+	Remove From(rp_list, 1);
+	ret_list = {};
+	For Each({file_path}, rp_list,
+		file_list = rp_list[1];
+		file_list = Regex Match(Collapse Whitespace(file_path), "(^.*?)( REG_DWORD)");
+		Insert Into(ret_list, file_list[2]);
+	);
+	return(ret_list);
+);
+
+rp_recent_files = Run Program(
+	Executable("cmd.exe"),
+	Options({"/c", "\[reg query "HKEY_CURRENT_USER\SOFTWARE\SAS Institute Inc.\JMP\Recent\Files"]\"}),
+	ReadFunction("text")
+);
+
+rp_pinned_files = Run Program(
+	Executable("cmd.exe"),
+	Options({"/c", "\[reg query "HKEY_CURRENT_USER\SOFTWARE\SAS Institute Inc.\JMP\Recent\Files\Pinned"]\"}),
+	ReadFunction("text")
+);
+
+recent_files = get_jmp_recent_file_list(rp_recent_files);
+pinned_files = get_jmp_pinned_file_list(rp_pinned_files);
+Remove From(recent_files, 1, N Items(pinned_files));
+
+tree = Tree Box({}, Size(400, 700));
+New Window("TreeBox Tests", tree);
+For Each({file}, recent_files,
+	depth = Words(file, "\");
+	label = Concat Items(Right(depth, 2), "/");
+	data = file;
+	new_root = Tree Node(label);
+	new_root << Set Data(data);
+	tree << Add Root(new_root);
+);

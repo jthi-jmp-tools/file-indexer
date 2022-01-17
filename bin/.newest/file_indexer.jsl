@@ -1,0 +1,573 @@
+﻿Names Default To Here(1);
+
+//scripts will be opened to new script window
+
+
+
+file_size_without_alarm = 100; //MB
+use_os_default_program = 1;
+open_tables_as_copy = 1;
+open_scripts_always_in_new_window = 1;
+
+
+//make multi-level context menu
+//tree
+//node
+//open
+//...
+
+// slighly based on MFI Standard Data indexer
+// some inspiration from jslFunctionsList.jsl by Justin...
+
+//"headeri", jossa kerrotaan mitä mikäkin tekee...
+//ctrl, shift, alt jne...
+
+//asetuksia
+//add to recent files on open, disabled
+//open as subset, enabled
+//copy to clipboard as string, disabled
+//directory + name settings + filtering
+//use two lists, easier to manage order
+//if no name list is provided -> use path
+// name list
+// direcxtory list
+// filter list
+// also global filter
+// exclude extensions
+// include extensions
+	
+//how to display filtered file count?
+//show total file count...
+//add file count to tab page box
+	
+//open in script editor
+//if datatable
+//Names Default To Here(1);
+//dt = Open("path");
+
+//todo
+//how to handle file size, modified data and so on...
+//how to handle jmp path variables
+//$SAMPLE_DATE, $ADDIN and so on...
+//add filtering..
+
+//window which will show ALL files in one tree / 3-4 columns
+//allow alphabetical searching from this list
+	
+// move non folder files to end
+//icons.jsl
+get_node_icons = Function({key = ""},
+	{Default Local},
+	aa_icons = ["folder" => "ProjectFolder",
+	"jmp" => "JMP",
+	"jsl" => "ScriptFile",
+	"jmpaddin" => "JMPAddin",
+	"jrn" => "JournalFile",
+	"jrp" => "ReportFile",
+	"jmpprj" => "Project",
+	"jmpappsource" => "AppFile",
+	"sql" => "QueryBuilder",
+	"htm" => "InternetOpen",
+	"html" => "InternetOpen",
+	"sql" => "QueryBuilder",
+	"jpg" => "Chart",
+	"jpeg" => "Chart",
+	"png" => "Chart",
+	"txt" => "TextImport",
+	"py" => "TextAnalysis",
+	"xls" => "ExcelImport",
+	"xlsx" => "ExcelImport",
+	"pptx" => "Missing",
+	"pdf" => "PDFImport",
+	"xml" => "XMLImport",
+	"json" => "JSONImport",
+	"csv" => "StructuralEquationModelsReorganize"];
+	aa_icons << Set Default Value("Missing");
+	Return(aa_icons[Lowercase(key)]);
+);
+
+set_node_icon = Function({str, node},
+	{file_type},
+	file_type = Word(-1, str, ".");
+	If(file_type == str,
+		node << Set Icon(get_node_icons("folder"));
+		node << Set Expanded Icon("ProjectOpenFolder");
+	,
+		node << Set Icon(get_node_icons(file_type))
+	);
+);
+
+//get_files.jsl
+
+get_file_list = Function({directory_paths},
+	{Default Local},
+	path_list = Transform Each({dir_path}, directory_paths, Files In Directory(dir_path, recursive(1)));
+	Return(path_list);
+);
+
+get_list_dt = Function({directory_paths},
+	{Default Local},
+	list_files = get_file_list(list_directories);
+	dt = New Table("FileListing",
+		New Column("FullPath", Character, Nominal),
+		New Column("BaseDir", Character, Nominal),
+		New Column("Path", Character, Nominal),
+		invisible
+	);
+	
+	path_values = {};
+	For Each({file_list}, list_files, Insert Into(path_values, file_list));
+	dt << Add Rows(N Items(path_values));
+	dt[0, "Path"] = path_values;
+	
+	base_dir_values = {};
+	For(i = 1, i <= N Items(directory_paths), i++,
+		Insert Into(base_dir_values, Repeat(List(directory_paths[i]), N Items(list_files[i])))
+	);
+	dt[0, "BaseDir"] = base_dir_values;
+	
+	Column(dt, "FullPath") << Set Each Value(:BaseDir || :Path);
+	dt << New Column("FileName", Character, Nominal, <<Set Each Value(Word(-1, :Path, "/")));
+	Column(dt, "Path") << Set Each Value(Substitute(:Path, :Filename, ""));
+	dt << New Column("MaxDepth", Numeric, Ordinal, <<Set Each Value(N Items(Words(:Path, "/"))));
+	max_depth = 0;
+	For(i = 1, i <= Col Max(:MaxDepth), i++,
+		dt << New Column("DirectoryDepth_" || Char(i), Character, Nominal, <<Set Each Value(Word(i, :Path, "/")));
+		max_depth = i;
+	);
+	Return(dt);
+);
+
+list_directories = Eval List({Get Path Variable("SAMPLE_DATA")}); //debug path
+list_directories = {"C:/Program Files/SAS/JMPPRO/16/Samples/Apps/", "C:/Program Files/SAS/JMPPRO/16/Samples/Automation/",
+"C:/Program Files/SAS/JMPPRO/16/Samples/Dashboards/", "C:/Program Files/SAS/JMPPRO/16/Samples/Data/",
+"C:/Program Files/SAS/JMPPRO/16/Samples/Images/", "C:/Program Files/SAS/JMPPRO/16/Samples/Import Data/",
+"C:/Program Files/SAS/JMPPRO/16/Samples/Projects/", "C:/Program Files/SAS/JMPPRO/16/Samples/Scripts/",
+"C:/Program Files/SAS/JMPPRO/16/Samples/STIPS/"};
+
+list_names = {"Apps", "Automation", "Dashboards", "Data", "Images", "Import Data", "Projects", "Scripts", "STIPS"};
+
+//list_directories = {"C:/Program Files/SAS/JMPPRO/16/Samples/Data/"};
+
+get_roots = Function({col_list, cur_depth = 1, dt = Current Data Table(), prev_val = Empty(), tree = Tree Box(), data_to_add = ""},
+	{Default Local}, 
+/*
+	col_list - list of columns to check. Last one should containt the value which will be added to leaves
+	cur_depth - recursion depth
+	max_depth - should be one less than length of col_list
+	dt - datatable to go over
+	prev_val - 
+	tree_nodes - list to collect nodes
+*/
+	max_depth = N Items(col_list) - 1;
+	Summarize(dt, depth_uniq = by(Column(col_list[cur_depth])));
+	For Each({val}, depth_uniq, //this is a new node, which should be added to current level?
+		r = Loc(dt[0, col_list[cur_depth]], val);
+		//show(r, val);
+		If(cur_depth > max_depth | Is Missing(val),
+			If(cur_depth == 1,
+				prev_val = Tree Node("RootFiles(" || Char(N Items(r)) || ")"); //
+				set_node_icon("folder", prev_val); //name for this? //could root_node be Tree Box()???? would make things easier 
+				prev_val << Set Data(data_to_add); //folder
+				tree << Add Root(prev_val);
+			);
+			For Each({filename}, dt[r, Right(col_list, 1)[1]],
+				new_node = Tree Node(filename);
+				set_node_icon(filename, new_node);
+				new_node << Set Data(filename);
+				prev_val << Append(new_node); //filen dataan laitettava joko full path tai vähintään rakennettava path viimeisestä asti
+			);
+		, //else
+			dt_temp = dt << Subset(rows(r), invisible); //change to private when sure that they are closed
+			new_node = Tree Node(val || "(" || Char(N Items(r)) || ")");
+			set_node_icon("folder", new_node);
+			If(cur_depth == 1,
+				tree << Add Root(new_node);
+				new_node << Set Data(data_to_add);
+			,
+				new_node << Set Data(val);
+				prev_val << Append(new_node);
+			);
+			Recurse(col_list, cur_depth + 1, dt_temp, new_node, root_node);
+			Close(dt_temp, no save);
+		);
+	);
+	Return(tree);
+);
+
+dt = get_list_dt(list_directories);
+
+
+//double_click_node =
+//double_click_leaf = 
+
+//liikuta Root "filet" loppuun, eikä juuren alkuun -> eli liikuta kaikki joiden child > 0 alkuun
+
+
+//run script...
+nw = New Window("File Indexer", //add total file count to window title? icon for window?
+	tb = Tab Box()
+);
+nw << On Close(Try(Close(dt, no save), Show(exception_msg)));
+
+col_list = {"DirectoryDepth_1", "DirectoryDepth_2", "FileName"};
+Summarize(dt, uniq_dirs = by(:BaseDir));
+// still might be better to add full path of leaves to nodes
+// this helps when you want to reduce the max_depth, as you won't have the full folder structure
+// if something goes beyond max_depth, should it be marked somehow?
+
+For Each({folder, idx}, uniq_dirs,
+	r = Loc(dt[0, "BaseDir"], folder);
+	dt_temp = dt << Subset(rows(r));
+
+//WHERE TO ADD AMOUNT OF ROWS?
+	//HOW TO HANDLE PATHS BECAUSE NO DEFAULT PATH IS GIVEN ANYMORE?
+	//ADD BASEDIR TO EACH OF THE DATAS?
+	tree = get_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), data_to_add = folder);
+	Close(dt_temp, no save);
+	
+	tb << Add(
+		list_names[idx],
+		H List Box(
+			V List Box(
+				Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
+					H List Box(
+						align("center"),
+						Text Edit Box("", <<Set Min Size(100, -1), <<Set Max Size(450, -1), <<Set Auto Stretching(1, 0), <<Set Hint("Filter...")),
+						Button Box("", <<Set Icon("Refresh")),
+						Button Box("", <<Set Icon("TabCloseActive")),
+
+					)
+				),
+				Text Box(Char(N Items(r)) || " files matched in folder: " || folder, <<set Wrap(600)),
+				tree
+			),
+			Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
+				V List Box(
+					Text Box("File Stats Could Be Show Here"),
+					Text Box("Or extra filters"),
+					Text Box("Possibly by file-type"),
+					Text Box("Also could list amount of different file types")
+				)
+			)
+		)
+	);
+	
+	tree << Set Node Double Click Script(
+		Function({tree, node},
+			child_count = node << Get Child Count;
+			If(node << Is Leaf(),
+				If(Is Control Key(),
+					open_node_file_columns(tree, node);
+//			,Is Alt Key(),
+					//			,Is Shift Key(),
+				, //else
+					open_node_path(tree, node)
+				);
+			//is shift...is alt...is ctrl
+				//get info...
+			
+			, //else folder
+				If(
+					Is Shift Key() | Is Alt Key(),
+						If(tree << Is Expanded(node),
+							Show("collapse");
+							collapse_child(tree, node);
+						,
+							Show("expand");
+							expand_child(tree, node);
+						),
+					Is Control Key(), open_node_path(tree, node)
+				)
+			);
+		)
+	);
+		
+	tree << Set Node Select Script(Function({tree, node}, Try(If(node << Is Leaf, get_node_file_info(tree, node)))));
+
+//empty spaceen -> expand/collapse tree... ei muuta
+	
+	tree << Set Context Menu Script(
+		Function({thistree, thisnode},
+			If(Is Empty(thisnode),
+				{/*Whole Tree Menu*/
+				{"Expand Tree", "", Function({tree, node},
+					expand_tree(tree)
+				)}, {"Collapse Tree", "", Function({tree, node},
+					collapse_tree(tree)
+				)}}
+			,
+				{/*node menu*/
+				{"Open", "", Function({tree, node},
+					open_node_path(tree, node)
+				)}, {"Open with columns", "", Function({tree, node},
+					open_node_file_columns(tree, node)
+				)}, {"Copy Path to Clipboard", "", Function({tree, node},
+					Set Clipboard(get_node_path(tree, node))
+				)}, {"Open Directory", "", Function({tree, node},
+					open_node_directory(tree, node)
+				)}, {"Get file info", "", Function({tree, node},
+					get_node_file_info(tree, node)
+				)}, {"", "separator", ""}, {"Expand Node", "", Function({tree, node},
+					expand_child(tree, node)
+				)}, {"Collapse Node", "", Function({tree, node},
+					collapse_child(tree, node)
+				)}, //jos koittaa collapseta leaffia -> collapsee parent node
+				{"", "separator", ""}, {"Expand All", "", Function({tree, node},
+					expand_tree(tree)
+				)}, {"Collapse All", "", Function({tree, node},
+					collapse_tree(tree)
+				)}, {"", "separator", ""}, {"Copy to $TEMP", "", Function({tree, node},
+					Show("Copy to $TEMP")
+				)}, {"Copy to $Desktop", "", Function({tree, node},
+					Show("Copy to $Desktop")
+				)}, {"Open as Copy", "", Function({tree, node},
+					Show("Open as Copy")
+				)}, {"Open in Script Editor", "", Function({tree, node},
+					Show("Open in Script Editor")
+				)}}
+			)
+		)
+	);
+//	root_node = (tree << get roots)[1];
+	//	set_node_icon("folder", root_node);
+	//	tree << Expand(root_node); //to expand root
+);
+tb << Set Selected(1);
+
+//expand all child nodes 
+expand_child = Function({tree, node},
+	{Default Local},
+	tree << expand(node);
+	child_count = node << Get Child Count();
+	For(i = 1, i <= child_count, i++,
+		child = node << Get Child(i);
+		Recurse(tree, child);
+	);
+);
+
+expand_tree = Function({tree},
+	{Default Local},
+	For Each({root}, tree << get roots(), expand_child(tree, root))
+);
+
+collapse_child = Function({tree, node},
+	{Default Local},
+	tree << collapse(node);
+	child_count = node << Get Child Count();
+	For(i = 1, i <= child_count, i++,
+		child = node << Get Child(i);
+		Recurse(tree, child);
+	);
+);
+
+collapse_tree = Function({tree},
+	{Default Local},
+	For Each({root}, tree << get roots(), collapse_child(tree, root))
+);
+
+get_node_path = Function({tree, node},
+	{Default Local},
+	path = {};
+	While(!Is Empty(node),
+		label = node << get data;
+		new_path = Regex(label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
+		Insert Into(path, new_path, 1); //if has (number) in the end -> replace with ""
+		node = node << parent;
+	);
+	path = Concat Items(path, "/");
+	Substitute Into(path, "//", "/"); //might be a bit risky, but...
+	Return(path);
+	
+);
+
+//open path / open node path?
+open_node_path = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	If(node << Is Leaf(), 
+		//Open(path);
+		open_node_file(tree, node)
+	,
+		Open(path); //Folder
+	);
+);
+
+open_node_directory = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	If(node << Is Leaf(),
+		dir_path = Left(path, Contains(path, "/", -1)),
+		dir_path = path
+	);
+	Open(dir_path);
+);
+
+root = (tree << get roots)[1];
+root << Get Child Count;
+node = (root << get child(1));
+
+
+open_node_file = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	file_name = node << get data;
+	file_size = Round(File Size(path) / (1024 * 1024), 3);
+	file_size_without_alarm = 100;
+	file_extension = Substr(Lowercase(path), Contains(Lowercase(path), ".", -1));
+	If(file_size > file_size_without_alarm & extension == ".jmp",
+		text = Eval Insert(
+			"File ^file_name^ (^file_size^ MB)is larger than
+the limit of ^file_size_without_alarm^MB.
+Opening file may take long time.
+Press OK to continue, cancel to stop.
+"
+		);
+		//new window... modal... alert.... ok/cancel...
+		nw = New Window("Opening large file...",
+			<<modal,
+			<<show toolbars(0),
+			<<Show Menu(0),
+			<<Set Window Icon("Warning"),
+			H List Box(Icon Box("WinFileNewDt"), Spacer Box(size(10, 1)), V Center Box(Text Box(text))),
+			H List Box(Button Box("OK"), Button Box("Cancel"))
+		);
+		If(nw["Button"] != 1,
+			Return();
+		,
+			Open(path);
+			return();
+		);
+	);
+	
+	If(file_extension == ".jmp",
+		Open(path);
+	,file_extension == ".jsl",
+		New Window("Window Title", <<Script, Load Text File(path)); //https://www.jmp.com/support/help/en/16.2/#page/jmp/scripting-the-script-editor.shtml
+	,file_extension == ".jmpaddin",
+		Show("EXTENSION....");
+	, Contains({".jrn", ".jrp", ".jmpprj", ".jmpappsource"}, file_extension), //rest of JMP file extensions...
+		Open(path)
+	, //else check for use_os_default_program 0/1
+		//Run Program(Executable("PowerShell.exe"), Options(Eval Insert("\[-Command "& {Start-Process '^path^'}"]\")), Read function("text"));
+		Open(path); //JMP is able to open quite a many different file types
+	);
+);
+//https://community.jmp.com/t5/JSL-Cookbook/Open-a-file-in-the-operating-system-default-program/ta-p/246050
+
+open_node_file_columns = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	If(Ends With(Lowercase(path), ".jmp"),
+		col_list = Open(path, "Column Names Only");
+		dt_filter = New Table("to_filter", invisible);
+		For Each({new_col}, col_list, dt_filter << New Column(new_col, Character, "None"));
+		cols_to_open = {};
+		dt_name = node << get data;
+		nw = New Window("Select columns to open",
+			<<show toolbars(0),
+			<<Show Menu(0),
+			<<modal,
+			<<return result,
+			<<Set Window Icon("ActivateDataTable"),
+			V List Box(
+				align("right"),
+				Border Box(Sides(15),
+					H Center Box(Text Box("Select columns to open from datatable:" || dt_name, <<Font Color("Blue"), <<Set Wrap(500)))
+				),
+				H List Box(
+					Panel Box("Select Character Columns", flc = Filter Col Selector(dt_filter, nlines(10))),
+					((flc << Parent) << Xpath("//IfBox")) << set(1), //enable filtering to filter col selector...
+					Panel Box("Cast Selected Columns",
+						Lineup Box(N Col(2),
+							Button Box("Add", clb << Append((flc << get selected))),
+							clb = Col List Box(Data Table(dt_filter << get name), min items(1), nlines(10), <<Modeling Type({"Any"})),
+							Button Box("Clear Selection", clb << Clear selection),
+							Button Box("Remove Selected", clb << Remove Selected)
+						)
+					),
+					Panel Box("Actions", V List Box(Button Box("OK", cols_to_open = clb << get items), Button Box("Cancel")))
+				)
+			)
+		);
+		Try(Close(dt_filter, no save));
+		If(nw["Button"] != 1 | N Items(cols_to_open) == 0,
+			Return()
+		);
+		Eval(Eval Expr(Open(path, Select Columns(Expr(cols_to_open)))));
+	);
+);
+
+
+get_node_file_info = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	file_name = node << get data;
+	file_modified = As Date(Last Modification Date(path));
+	file_size = Round(File Size(path) / (1024 * 1024), 2);
+	node << Set Tip(Eval Insert("File: ^file_name^
+File last modified: ^file_modified^
+File size: ^file_size^ MB"));
+	node << Set Font Style("Bold");
+	//set value to... display box???
+);
+
+get_node_file_info_table = Function({tree, node},
+	{Default Local},
+	path = get_node_path(tree, node);
+	node << Set Tip("AAAAAAAAA");
+	node << Set Font Style("Bold");
+	//set value to... display box???
+);
+Write();
+
+
+
+/*
+Names Default To Here(1);
+
+start = HP Time();
+b = Run Program(
+	Executable("PowerShell.exe"), 
+	Options("\[gci -Path 'C:\Users\jarmo\Documents\Code'-rec -File | select Length,LastWriteTime,FullName | out-string -width 4096]\"), 
+	ReadFunction("text")
+);
+
+b = Run Program(
+	Executable("cmd.exe"), 
+	Options({"/c", "dir", "/s", "C:\Users\jarmo\Documents\Code"}), 
+	ReadFunction("text")
+);
+
+Show(HP Time() - start);
+//https://community.jmp.com/t5/Discussions/How-to-use-JSL-to-process-the-txt-files-into-tabular-data/td-p/232113
+//there is sime blob solution here most likely...
+
+ps_rows = Words(b, "\!N");
+dt = New Table("AA",
+	New Column("Size", Character),
+	New Column("Time", Character),
+	New Column("Path", Character),
+);
+For EacH({row}, ps_rows,
+	a = Regex Match(Collapse Whitespace(row), "(\d*) (.*? .*? .*?) (.*)");
+	Try(
+		dt << Add Rows({Size = a[2], Time = a[3], Path = a[4]}),
+		show(exception_msg)
+	);
+);
+Show(HP Time() - start);
+wait(0);
+start = HP Time();
+
+
+z = Files In Directory("C:\Users\jarmo\Documents\Code", recursive(1));
+New Table("AA",
+	New Column("AA", Character, Values(z))
+);
+Show(HP Time() - start);
+
+
+//dir /s/a:-d-h-s /t:w /n C:\Users\jarmo\Documents\Code
+//https://stackoverflow.com/questions/7196937/how-to-speed-up-powershell-get-childitem-over-unc
+*/

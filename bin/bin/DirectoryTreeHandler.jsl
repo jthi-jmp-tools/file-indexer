@@ -1,0 +1,81 @@
+﻿Names Default To Here(1);
+
+Include("IconHandler.jsl");
+
+Define Class("DirectoryTreeHandler", BaseClass(IconHandler), 
+	_init_ = Method({});
+
+	expand_child = Method({tree, node},
+		tree << expand(node);
+		child_count = node << Get Child Count();
+		For(i = 1, i <= child_count, i++,
+			child = node << Get Child(i);
+			expand_child(tree, child);
+		);
+	);
+
+	expand_tree = Method({tree},
+		For Each({root}, tree << get roots(), expand_child(tree, root))
+	);
+
+	collapse_child = Method({tree, node},
+		tree << collapse(node);
+		child_count = node << Get Child Count();
+		For(i = 1, i <= child_count, i++,
+			child = node << Get Child(i);
+			collapse_child(tree, child);
+		);
+	);
+
+	collapse_tree = Method({tree},
+		For Each({root}, tree << get roots(), collapse_child(tree, root))
+	);
+
+	get_directory_roots = Method({col_list, cur_depth = 1, dt = Current Data Table(), prev_val = Empty(), tree = Tree Box(), data_to_add = ""},
+	/*
+		col_list - list of columns to check. Last one should containt the value which will be added to leaves
+		cur_depth - recursion depth
+		max_depth - should be one less than length of col_list
+		dt - datatable to go over
+		prev_val - 
+		tree_nodes - list to collect nodes
+	*/
+		max_depth = N Items(col_list) - 1;
+		Summarize(dt, depth_uniq = by(Column(col_list[cur_depth])));
+		For Each({val}, depth_uniq, //this is a new node, which should be added to current level?
+			r = Loc(dt[0, col_list[cur_depth]], val);
+			//show(r, val);
+			If(cur_depth > max_depth | Is Missing(val),
+				If(cur_depth == 1,
+					prev_val = Tree Node("RootFiles(" || Char(N Items(r)) || ")"); //
+					set_node_icon("folder", prev_val); //name for this? //could root_node be Tree Box()???? would make things easier 
+					prev_val << Set Data(data_to_add); //folder
+					tree << Add Root(prev_val);
+				);
+				For Each({filename}, dt[r, Right(col_list, 1)[1]],
+					new_node = Tree Node(filename);
+					set_node_icon(filename, new_node);
+					new_node << Set Data(filename);
+					prev_val << Append(new_node); //filen dataan laitettava joko full path tai vähintään rakennettava path viimeisestä asti
+				);
+			, //else
+				dt_temp = dt << Subset(rows(r), invisible); //change to private when sure that they are closed
+				new_node = Tree Node(val || "(" || Char(N Items(r)) || ")");
+				set_node_icon("folder", new_node);
+				If(cur_depth == 1,
+					tree << Add Root(new_node);
+					new_node << Set Data(data_to_add);
+				,
+					new_node << Set Data(val);
+					prev_val << Append(new_node);
+				);
+				get_directory_roots(col_list, cur_depth + 1, dt_temp, new_node, root_node);
+				Close(dt_temp, no save);
+			);
+		);
+		return(tree);
+	);
+);
+
+DTH = New Object(DirectoryTreeHandler());
+DTH << Lock Class;
