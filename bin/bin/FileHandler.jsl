@@ -38,6 +38,8 @@ Define Class("FileHandler",
 			max_depth = i;
 			Insert Into(depth_columns, new_col << get name);
 		);
+		//sort alphabetically...
+//		dt << Sort(By(:FileName), Replace Table, Order(Ascending));
 		return(Eval List({dt, depth_columns}));
 	);
 );

@@ -15,43 +15,45 @@ Define Class("NodeFunctions",
 
 	_init_ = Method({});
 
-	get_node_path = Method({tree, node},
-		path = {};
-		While(!Is Empty(node),
-			//if we are on root level.. add label also
-			If(IsEmpty(node << parent),
-				new_path = Regex(node << get label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
-				Insert Into(path, new_path, 1);
-			);
-			
-			label = node << get data;
-			new_path = Regex(label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
-			Insert Into(path, new_path, 1); //if has (number) in the end -> replace with ""
-			node = node << parent;
+	expand_node = Method({tree, node},
+		tree << expand(node);
+		child_count = node << Get Child Count();
+		For(i = 1, i <= child_count, i++,
+			child = node << Get Child(i);
+			expand_node(tree, child);
 		);
-		path = Concat Items(path, "/");
-		Substitute Into(path, "//", "/"); //might be a bit risky, but...
-		return(path);
 	);
 
-	//open path / open node path?
+	collapse_node = Method({tree, node},
+		tree << collapse(node);
+		child_count = node << Get Child Count();
+		For(i = 1, i <= child_count, i++,
+			child = node << Get Child(i);
+			collapse_node(tree, child);
+		);
+	);
+
+	get_node_path = Method({tree, node},
+		return(node << get data);
+	);
+
 	open_node_path = Method({tree, node},
 		path = get_node_path(tree, node);
 		If(node << Is Leaf(), 
-			//Open(path);
-			open_node_file(tree, node)
-		,
-			Open(path); //Folder
+			open_node_file(tree, node);
+		, //else
+			open_node_directory(tree, node); //directory
 		);
 	);
 
 	open_node_directory = Method({tree, node},
-		path = get_node_path(tree, node);
 		If(node << Is Leaf(),
-			dir_path = Left(path, Contains(path, "/", -1)),
-			dir_path = path
+			cur_node = node << parent;
+		, //else
+			cur_node = node;
 		);
-		Open(dir_path);
+		path = get_node_path(tree, cur_node);
+		Open(path);
 	);
 
 	open_node_file = Method({tree, node},
@@ -137,20 +139,19 @@ Define Class("NodeFunctions",
 			);
 			Try(Close(dt_filter, no save));
 			If(nw["Button"] != 1 | N Items(cols_to_open) == 0,
-				Return()
+				Throw("Cancel pressed or no columns added"); //other option is to open with all columns...
 			);
-			Eval(Eval Expr(Try(Open(path, Select Columns(Expr(cols_to_open))), show(exception_msg))));
+			Eval(Eval Expr(Try(Open(path, Select Columns(Expr(cols_to_open))))));
 		);
 	);
 
 
 	get_node_file_info = Method({tree, node},
 		path = get_node_path(tree, node);
-		file_name = node << get data;
 		file_modified = As Date(Last Modification Date(path));
 		file_size = Round(File Size(path) / (1024 * 1024), 2);
 		node << Set Tip(Eval Insert(
-"File: ^file_name^
+"File: ^path^
 File last modified: ^file_modified^
 File size: ^file_size^ MB"));
 		node << Set Font Style("Bold");

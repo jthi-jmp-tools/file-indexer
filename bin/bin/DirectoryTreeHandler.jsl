@@ -1,37 +1,21 @@
 ﻿Names Default To Here(1);
 
 Include("IconHandler.jsl");
+Include("NodeFunctions.jsl");
 
-Define Class("DirectoryTreeHandler", BaseClass(IconHandler), 
+
+Define Class("DirectoryTreeHandler", BaseClass(IconHandler), BaseClass(NodeFunctions),
 	_init_ = Method({});
 
-	expand_child = Method({tree, node},
-		tree << expand(node);
-		child_count = node << Get Child Count();
-		For(i = 1, i <= child_count, i++,
-			child = node << Get Child(i);
-			expand_child(tree, child);
-		);
+	collapse_tree = Method({tree},
+		For Each({root}, tree << get roots(), collapse_node(tree, root))
 	);
 
 	expand_tree = Method({tree},
-		For Each({root}, tree << get roots(), expand_child(tree, root))
+		For Each({root}, tree << get roots(), expand_node(tree, root))
 	);
 
-	collapse_child = Method({tree, node},
-		tree << collapse(node);
-		child_count = node << Get Child Count();
-		For(i = 1, i <= child_count, i++,
-			child = node << Get Child(i);
-			collapse_child(tree, child);
-		);
-	);
-
-	collapse_tree = Method({tree},
-		For Each({root}, tree << get roots(), collapse_child(tree, root))
-	);
-
-	get_directory_roots = Method({col_list, cur_depth = 1, dt = Current Data Table(), prev_val = Empty(), tree = Tree Box(), data_to_add = ""},
+	get_directory_roots = Method({col_list, cur_depth = 1, dt = Current Data Table(), prev_val = Empty(), tree = Tree Box(), folder = ""},
 	/*
 		col_list - list of columns to check. Last one should containt the value which will be added to leaves
 		cur_depth - recursion depth
@@ -40,6 +24,9 @@ Define Class("DirectoryTreeHandler", BaseClass(IconHandler),
 		prev_val - 
 		tree_nodes - list to collect nodes
 	*/
+	
+	// should add BaseDir to first folder
+	// then always get the value from prev_val and add that with current to build path?
 		max_depth = N Items(col_list) - 1;
 		Summarize(dt, depth_uniq = by(Column(col_list[cur_depth])));
 		For Each({val}, depth_uniq, //this is a new node, which should be added to current level?
@@ -49,13 +36,18 @@ Define Class("DirectoryTreeHandler", BaseClass(IconHandler),
 				If(cur_depth == 1,
 					prev_val = Tree Node("RootFiles(" || Char(N Items(r)) || ")"); //
 					set_node_icon("folder", prev_val); //name for this? //could root_node be Tree Box()???? would make things easier 
-					prev_val << Set Data(data_to_add); //folder
+					
+					If(IsMissing(folder),
+						prev_val << Set Data(dt[r[1], "BaseDir"]); //folder
+					,
+						prev_val << Set Data(folder);
+					);
 					tree << Add Root(prev_val);
 				);
 				For Each({filename}, dt[r, Right(col_list, 1)[1]],
 					new_node = Tree Node(filename);
 					set_node_icon(filename, new_node);
-					new_node << Set Data(filename);
+					new_node << Set Data(prev_val << get data || filename);
 					prev_val << Append(new_node); //filen dataan laitettava joko full path tai vähintään rakennettava path viimeisestä asti
 				);
 			, //else
@@ -64,16 +56,117 @@ Define Class("DirectoryTreeHandler", BaseClass(IconHandler),
 				set_node_icon("folder", new_node);
 				If(cur_depth == 1,
 					tree << Add Root(new_node);
-					new_node << Set Data(data_to_add);
+					If(IsMissing(folder),
+						new_node << Set Data(val);
+					,
+						new_node << Set Data(folder || val || "/");
+					);
 				,
-					new_node << Set Data(val);
+					new_node << Set Data(prev_val << get data || val ||"/");
 					prev_val << Append(new_node);
 				);
-				get_directory_roots(col_list, cur_depth + 1, dt_temp, new_node, root_node);
+				get_directory_roots(col_list, cur_depth + 1, dt_temp, new_node, root_node, folder);
 				Close(dt_temp, no save);
 			);
 		);
+		
 		return(tree);
+	);
+	
+	set_tree_scripts = Method({tree},
+		tree << Set Node Double Click Script(
+			Function({tree, node},
+				If(node << Is Leaf(),
+					If(Is Control Key(),
+						DTH:open_node_file_columns(tree, node);
+					//,Is Alt Key(),
+					//,Is Shift Key(),
+					, //else
+						DTH:open_node_path(tree, node)
+					);
+				, //else folder
+					If(Is Shift Key() | Is Alt Key(), //these are a bit buggy, due to we might not be able to overwrite the default behaviour of double-click
+						If(tree << Is Expanded(node),
+							DTH:collapse_node(tree, node);
+						,
+							DTH:expand_node(tree, node);
+						),
+					Is Control Key(), 
+						DTH:open_node_path(tree, node)
+					, //else
+						//by default this will always expand the root which is fine
+					)
+				)
+			)
+		);
+		
+		tree << Set Node Select Script(Function({tree, node}, 
+			If(!IsEmpty(node),
+				If(node << Is Leaf, 
+					DTH:get_node_file_info(tree, node))
+				)
+			)
+		);
+		
+		tree << Set Context Menu Script(
+			Function({thistree, thisnode},
+		
+				If(Is Empty(thisnode),
+					{/*Menu for "empty" part of tree*/
+					{"Expand Tree", "", Function({tree, node},
+						DTH:expand_tree(tree)
+					)}, {"Collapse Tree", "", Function({tree, node},
+						DTH:collapse_tree(tree)
+					)}}
+				, 
+				thisnode << Is leaf(), //files //we could also manipulate different filetypes here
+					{/*node menu*/
+					{"Open", "", Function({tree, node},
+						DTH:open_node_path(tree, node)
+					)}, {"Open with columns", "", Function({tree, node}, //only JMP tables...
+						DTH:open_node_file_columns(tree, node)
+					)}, {"Copy Path to Clipboard", "", Function({tree, node},
+						Set Clipboard(DTH:get_node_path(tree, node))
+					)}, {"Get file info", "", Function({tree, node},
+						DTH:get_node_file_info(tree, node)
+					)}, 
+						{"", "separator", ""}, 
+						{"Expand Folder", "", Function({tree, node},
+						DTH:expand_node(tree, node << parent)
+					)}, {"Collapse Folder", "", Function({tree, node},
+						DTH:collapse_node(tree, node << parent)
+					)},  {"Open File Directory", "", Function({tree, node},
+						DTH:open_node_directory(tree, node)
+					)},
+					{"", "separator", ""}, {"Copy to $TEMP", "", Function({tree, node},
+						Show("Copy to $TEMP")
+					)}, {"Copy to $Desktop", "", Function({tree, node},
+						Show("Copy to $Desktop")
+					)}, {"Open as Copy", "", Function({tree, node},
+						Show("Open as Copy")
+					)}, {"Open in Script Editor", "", Function({tree, node},
+						Show("Open in Script Editor")
+					)}}
+				,//directory
+					{/*node menu*/
+					{"Open", "", Function({tree, node},
+						DTH:open_node_path(tree, node)
+					)}, {"Copy Path to Clipboard", "", Function({tree, node},
+						Set Clipboard(DTH:get_node_path(tree, node))
+					)}, {"", "separator", ""}, {"Expand Folder", "", Function({tree, node},
+						DTH:expand_node(tree, node)
+					)}, {"Collapse Folder", "", Function({tree, node},
+						DTH:collapse_node(tree, node)
+					)}, //jos koittaa collapseta leaffia -> collapsee parent node
+					{"", "separator", ""}, {"Expand All", "", Function({tree, node},
+						DTH:expand_tree(tree)
+					)}, {"Collapse All", "", Function({tree, node},
+						DTH:collapse_tree(tree)
+					)}
+					}
+				)
+			)
+		);
 	);
 );
 

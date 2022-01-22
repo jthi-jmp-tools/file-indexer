@@ -1,48 +1,82 @@
 ﻿Names Default To Here(1);
 
-//get node path doesn't work as intended...
-	//add data to files
-	//adding data to folder is more complicated, so create different function to get their path 
 
-
-//think instructions to side
-//
+// add to recent...
+// open as copy...
+// copy first to temp -> open -> remove from temp?
 // 
-// SEARCH FUNKTIO PUUTTUU...
-/*
-before_cur_tree = ((((teb << parent) << parent) << sib));
-cur_tree = before_cur_tree << sib;
-cur_tree_nodes = cur_tree << get roots;
-old_folder = cur_tree_nodes[1] << get data;
-cur_tree << Remove Root(cur_tree_nodes[1]);
-rows = dt << get rows where(Contains(lowercase(:FileName), "body") & :BaseDir == old_folder);
-dt_temp = dt << Subset(Rows(rows));
-new_tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., cur_tree, data_to_add = old_folder); 
-Close(dt_temp, no save);
-DTH:expand_tree(new_tree);
-*/
 
 //possibility to create file list once a day (or when refresh is pressed)
-//Main Menu("Quick Open");
-//Main Menu("JMP Help");
-//Main Menu("Sample Data");
-
 //If File Writable -> open as copy
-
 // some sort of app header
-// 
 // OPEN HELP...
+
 // SEARCH ALPHABETICALLY
+	//define user interface...
+
 // better icons
 // settings and help buttons
 // recent files sivulle???
-// launch recent files... haku
 // window list sivulle...
+
 // oma välilehti, johon haetaan recent files
+
+
+
+// create new window... with possibility to filter further down?
+
+search_tree = function({teb, dt, root_dir, tb_found}, {Default Local},
+	col_list = {"DirectoryDepth_1", "DirectoryDepth_2", "FileName"}; //HOW TO FIX THIS..... CREATE FUNCTION IS EASIEST SOLUTION...
+	before_cur_tree = ((((teb << parent) << parent) << sib));
+	cur_tree = before_cur_tree << sib;
+
+	//remove all old roots
+	For Each({old_root}, cur_tree << get roots,
+		cur_tree << Remove Root(old_root);	
+	);
+	
+	search_text = teb << get text;
+	If(IsMissing(search_text),
+		If(IsMissing(root_dir),
+			rows = Loc(dt[0, "BaseDir"]);
+		,
+			rows = Loc(dt[0, "BaseDir"], root_dir);
+		);
+		
+		dt_temp = dt << Subset(Rows(rows), invisible);
+		found_rows = N Rows(dt_temp);
+		new_tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., cur_tree);
+		Close(dt_temp, no save);
+//		DTH:expand_tree(new_tree); //don't expand if all roots
+	,
+		If(IsMissing(root_dir),
+			rows = dt << get rows where(Contains(lowercase(:FileName), search_text));
+		,
+			rows = dt << get rows where(Contains(lowercase(:FileName), search_text) & :BaseDir == root_dir);
+		);
+		
+		If(N Items(rows) > 0,
+			dt_temp = dt << Subset(Rows(rows));
+			found_rows = N Rows(dt_temp);
+			new_tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., cur_tree);
+			Close(dt_temp, no save);
+			If(!IsMissing(root_dir),
+				DTH:expand_tree(new_tree);
+			);
+		,
+			empty_root = Tree Node("RootFiles(0)");
+			found_rows = 0;
+			empty_root << Set Data(root_dir);
+			cur_tree << Add Root(empty_root);
+		);
+	);
+	tb_found << Set Text(Char(found_rows));
+	1;
+);
 
 Include("bin/DirectoryTreeHandler.jsl"); //DTH
 Include("bin/FileHandler.jsl"); //FH
-Include("bin/NodeFunctions.jsl"); //NH
+//Include("bin/NodeFunctions.jsl"); //NH
 
 aa_settings = Load Text File("settings.json", JSON);
 gui_settings = aa_settings["GUI"];
@@ -54,14 +88,25 @@ dir_settings = aa_settings["directory_settings"];
 //reducing depth_columns can be used to reduce the max depth
 col_list = depth_columns || {"FileName"};
 
+
+
+
 nw = New Window(gui_settings["window_title"] || " (" || Char(N Rows(dt)) || ")",
 	Show Menu(1),
 	Show Toolbars(0),
 	<<Set Window Icon(gui_settings["window_icon"]),
 	V List Box(
-		Text Box("DO SOMETHING HERE", <<Set Font Size(20)),
+		Text Box("File Indexer", <<Set Font Size(20)),
 		H List Box(
-			Lineup Box(N Col(1), Spacer Box(size(0, 20)), Button Box("Help"), Button Box("Help"), Button Box("Help"), Button Box("Help"), ),
+			Outline Box("Actions",
+				<<outlinecloseorientation("Vertical"),
+				<<Close(0),
+				Lineup Box(N Col(1), Spacer Box(size(0, 20)), 
+					Button Box("Quick Open", Main Menu("Quick Open")), 
+					Button Box("JMP Help", Main Menu("JMP Help")), 
+					Button Box("Sample Data", Main Menu("Sample Data"))
+				)
+			),
 			tb = Tab Box(),
 			V List Box(
 				Spacer Box(size(0, 20)),
@@ -102,17 +147,35 @@ nw << On Close(Try(Close(dt, no save), Show(exception_msg)));
 
 Summarize(dt, uniq_dirs = by(:BaseDir));
 
+// one way to handle ALL files... currently paths will be wrong in all of the paths... how to handle is a mystery, one way is to return
+// the "base folder" variable into get_directory_roots function
+// then use that as base value for roots and if it is empty use BaseDir
+
+Insert Into(uniq_dirs, "");
+Insert Into(dir_settings["names"], "All Files");
+
 For Each({folder, idx}, uniq_dirs,
-	r = Loc(dt[0, "BaseDir"], folder);
-	dt_temp = dt << Subset(rows(r));
+	If(IsMissing(folder),
+		col_list = {"BaseDir", "DirectoryDepth_1", "DirectoryDepth_2", "FileName"};
+		r = Loc(Matrix(!IsMissing(dt[0, "BaseDir"])));
+		dt_temp = dt;
+		tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), "");
+	,
+		col_list = {"DirectoryDepth_1", "DirectoryDepth_2", "FileName"};
+		r = Loc(dt[0, "BaseDir"], folder);
+		dt_temp = dt << Subset(rows(r));
+		tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), folder);
+		Close(dt_temp, no save);
+	);
 
 //WHERE TO ADD AMOUNT OF ROWS?
 	//HOW TO HANDLE PATHS BECAUSE NO DEFAULT PATH IS GIVEN ANYMORE?
 	//ADD BASEDIR TO EACH OF THE DATAS?
 
-	tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), data_to_add = folder);
-	Close(dt_temp, no save);
 	
+	//update text.... above tree?
+	
+	tb_found = Text Box(Char(N Items(r)));
 	tb << Add(
 		dir_settings["names"][idx],
 		H List Box(
@@ -120,18 +183,24 @@ For Each({folder, idx}, uniq_dirs,
 				Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
 					H List Box(
 						align("center"),
-						teb = Text Edit Box("",
+						Eval(EvalExpr(teb = Text Edit Box("", << Set Function(function({this}, search_tree(this, Expr(dt), Expr(folder), Expr(tb_found)))),
 							<<Set Min Size(100, -1),
 							<<Set Max Size(450, -1),
 							<<Set Auto Stretching(1, 0),
 							<<Set Hint("Filter...")
-						),
-						Button Box("", <<Set Icon("Refresh")),
-						Button Box("", <<Set Icon("TabCloseActive")), 
-
+						))),
+						Button Box("", <<Set Icon("WinToolsMagnifier"),
+							//this will happen automagically when this is pressed, so can be left empty
+							1;
+						), //might be useless,,
+						Button Box("", <<Set Icon("TabCloseActive"), << Set Function(function({this},
+								sib_teb = ((this << Prev Sib) << Prev Sib);
+								sib_teb << Set Text("", Run Script(1));
+							))
+						), 
 					)
 				),
-				Text Box(Char(N Items(r)) || " files matched in folder: " || folder, <<set Wrap(600)),
+				H List Box(tb_found, Text Box("/" || Char(N Items(r)) || " files matched in folder: " || folder, <<set Wrap(600))),
 				tree
 			)/*,
 			Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
@@ -145,81 +214,7 @@ For Each({folder, idx}, uniq_dirs,
 		)
 	);
 	
-	tree << Set Node Double Click Script(
-		Function({tree, node},
-			If(node << Is Leaf(),
-				If(Is Control Key(),
-					NH:open_node_file_columns(tree, node);
-//			,Is Alt Key(),
-					//			,Is Shift Key(),
-				, //else
-					NH:open_node_path(tree, node)
-				);
-			//is shift...is alt...is ctrl
-				//get info...
-			
-			, //else folder
-				If(
-					Is Shift Key() | Is Alt Key(),
-						If(tree << Is Expanded(node),
-							Show("collapse");
-							DTH:collapse_child(tree, node);
-						,
-							Show("expand");
-							DTH:expand_child(tree, node);
-						),
-					Is Control Key(), open_node_path(tree, node)
-				)
-			)
-		)
-	);
-	
-	tree << Set Node Select Script(Function({tree, node}, Try(If(node << Is Leaf, NH:get_node_file_info(tree, node)))));
-
-//empty spaceen -> expand/collapse tree... ei muuta
-	
-	tree << Set Context Menu Script(
-		Function({thistree, thisnode},
-			If(Is Empty(thisnode),
-				{/*Whole Tree Menu*/
-				{"Expand Tree", "", Function({tree, node},
-					DTH:expand_tree(tree)
-				)}, {"Collapse Tree", "", Function({tree, node},
-					DTH:collapse_tree(tree)
-				)}}
-			,
-				{/*node menu*/
-				{"Open", "", Function({tree, node},
-					NH:open_node_path(tree, node)
-				)}, {"Open with columns", "", Function({tree, node},
-					NH:open_node_file_columns(tree, node)
-				)}, {"Copy Path to Clipboard", "", Function({tree, node},
-					Set Clipboard(NH:get_node_path(tree, node))
-				)}, {"Open Directory", "", Function({tree, node},
-					NH:open_node_directory(tree, node)
-				)}, {"Get file info", "", Function({tree, node},
-					NH:get_node_file_info(tree, node)
-				)}, {"", "separator", ""}, {"Expand Node", "", Function({tree, node},
-					DTH:expand_child(tree, node)
-				)}, {"Collapse Node", "", Function({tree, node},
-					DTH:collapse_child(tree, node)
-				)}, //jos koittaa collapseta leaffia -> collapsee parent node
-				{"", "separator", ""}, {"Expand All", "", Function({tree, node},
-					DTH:expand_tree(tree)
-				)}, {"Collapse All", "", Function({tree, node},
-					DTH:collapse_tree(tree)
-				)}, {"", "separator", ""}, {"Copy to $TEMP", "", Function({tree, node},
-					Show("Copy to $TEMP")
-				)}, {"Copy to $Desktop", "", Function({tree, node},
-					Show("Copy to $Desktop")
-				)}, {"Open as Copy", "", Function({tree, node},
-					Show("Open as Copy")
-				)}, {"Open in Script Editor", "", Function({tree, node},
-					Show("Open in Script Editor")
-				)}}
-			)
-		)
-	);
+	DTH:set_tree_scripts(tree);
 //	root_node = (tree << get roots)[1];
 	//	set_node_icon("folder", root_node);
 	//	tree << Expand(root_node); //to expand root
