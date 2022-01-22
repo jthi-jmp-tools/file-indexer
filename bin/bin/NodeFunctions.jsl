@@ -18,6 +18,12 @@ Define Class("NodeFunctions",
 	get_node_path = Method({tree, node},
 		path = {};
 		While(!Is Empty(node),
+			//if we are on root level.. add label also
+			If(IsEmpty(node << parent),
+				new_path = Regex(node << get label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
+				Insert Into(path, new_path, 1);
+			);
+			
 			label = node << get data;
 			new_path = Regex(label, "\(\d*\)$", "", GLOBALREPLACE); //remove file count
 			Insert Into(path, new_path, 1); //if has (number) in the end -> replace with ""
@@ -74,22 +80,23 @@ Define Class("NodeFunctions",
 			If(nw["Button"] != 1,
 				Return();
 			,
-				Open(path);
+				Try(Open(path));
 				return();
 			);
 		);
 		
 		If(file_extension == ".jmp",
-			Open(path);
+			Try(Open(path));
 		,file_extension == ".jsl",
-			New Window("Window Title", <<Script, Load Text File(path)); //https://www.jmp.com/support/help/en/16.2/#page/jmp/scripting-the-script-editor.shtml
+			jsl_str = Try(Load Text File(path));
+			New Window("Window Title", <<Script, jsl_str); //https://www.jmp.com/support/help/en/16.2/#page/jmp/scripting-the-script-editor.shtml
 		,file_extension == ".jmpaddin",
 			Show("EXTENSION....");
 		, Contains({".jrn", ".jrp", ".jmpprj", ".jmpappsource"}, file_extension), //rest of JMP file extensions...
-			Open(path)
+			Try(Open(path));
 		, //else check for use_os_default_program 0/1
 			//Run Program(Executable("PowerShell.exe"), Options(Eval Insert("\[-Command "& {Start-Process '^path^'}"]\")), Read function("text"));
-			Open(path); //JMP is able to open quite a many different file types
+			Try(Open(path)); //JMP is able to open quite a many different file types
 		);
 	);
 	//https://community.jmp.com/t5/JSL-Cookbook/Open-a-file-in-the-operating-system-default-program/ta-p/246050
@@ -132,7 +139,7 @@ Define Class("NodeFunctions",
 			If(nw["Button"] != 1 | N Items(cols_to_open) == 0,
 				Return()
 			);
-			Eval(Eval Expr(Open(path, Select Columns(Expr(cols_to_open)))));
+			Eval(Eval Expr(Try(Open(path, Select Columns(Expr(cols_to_open))), show(exception_msg))));
 		);
 	);
 

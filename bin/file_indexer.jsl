@@ -1,5 +1,13 @@
 ﻿Names Default To Here(1);
 
+//get node path doesn't work as intended...
+	//add data to files
+	//adding data to folder is more complicated, so create different function to get their path 
+
+
+//think instructions to side
+//
+// 
 // SEARCH FUNKTIO PUUTTUU...
 /*
 before_cur_tree = ((((teb << parent) << parent) << sib));
@@ -46,31 +54,51 @@ dir_settings = aa_settings["directory_settings"];
 //reducing depth_columns can be used to reduce the max depth
 col_list = depth_columns || {"FileName"};
 
-nw = New Window(gui_settings["window_title"] || " ("||char(NRows(dt))||")",
-	Show Menu(1), Show Toolbars(0),
-	<< Set Window Icon(gui_settings["window_icon"]),
+nw = New Window(gui_settings["window_title"] || " (" || Char(N Rows(dt)) || ")",
+	Show Menu(1),
+	Show Toolbars(0),
+	<<Set Window Icon(gui_settings["window_icon"]),
 	V List Box(
-		Text Box("DO SOMETHING HERE", << Set Font Size(20)),
+		Text Box("DO SOMETHING HERE", <<Set Font Size(20)),
 		H List Box(
-			Lineup Box(N Col(1),
-				spacer box(size(0,20)),
-				Button Box("Help"),
-				Button Box("Help"),
-				Button Box("Help"),
-				Button Box("Help"),
-			),
-			tb = Tab Box()
+			Lineup Box(N Col(1), Spacer Box(size(0, 20)), Button Box("Help"), Button Box("Help"), Button Box("Help"), Button Box("Help"), ),
+			tb = Tab Box(),
+			V List Box(
+				Spacer Box(size(0, 20)),
+				Outline Box("Controls",
+					<<outlinecloseorientation("Vertical"),
+					<<Close(1),
+					Lineup Box(N Col(4),
+						Icon Box("ProjectFolder"), Text Box("+ 2x"), Icon Box("WinToolsArrow"), Text Box("- Expand folder"),
+						Icon Box("ProjectFolder"), Text Box("+ Ctrl + 2x"), Icon Box("WinToolsArrow"), Text Box("- Open Directory"),
+						Icon Box("ProjectFolder"), Text Box("+ Shift + 2x"), Icon Box("WinToolsArrow"), Text Box("- Expand/Collapse child"),
+						Icon Box("ProjectFolder"), Text Box("+ Alt + 2x"), Icon Box("WinToolsArrow"), Text Box("- Expand/Collapse child"),
+					),
+					Spacer Box(Size(0, 5)),
+					Lineup Box(N Col(4),
+						Icon Box("ProjectFile"), Text Box("+ 2x"), Icon Box("WinToolsArrow"), Text Box("- Open file"),
+						Icon Box("ProjectFile"), Text Box("+ Shift + 2x"), Icon Box("WinToolsArrow"), Text Box("- Open folder"), 
+						Icon Box("ProjectFile"), Text Box("+ Alt +"), Icon Box("WinToolsArrow"), Text Box("- Get info"),
+						Icon Box("JMP"), Text Box("+ Ctrl + 2x"), Icon Box("WinToolsArrow"), Text Box("- Open with columns"), //only for JMP tables...
+					)
+				)
+			)
 		)
-	);
-	
-
-);
-
-nw << On Close(
-	Try(
-		close(dt, no save), show(exception_msg)
 	)
 );
+
+/*	
+	ctrl + double click file -> open columns
+	double click file -> open file
+	
+	alt/shift + double click open directory -> collapse/expand whole child
+	ctrl + double click folder -> open directory
+	double click folder -> expand folder
+	
+	single click file -> get info
+*/
+
+nw << On Close(Try(Close(dt, no save), Show(exception_msg)));
 
 Summarize(dt, uniq_dirs = by(:BaseDir));
 
@@ -79,8 +107,8 @@ For Each({folder, idx}, uniq_dirs,
 	dt_temp = dt << Subset(rows(r));
 
 //WHERE TO ADD AMOUNT OF ROWS?
-//HOW TO HANDLE PATHS BECAUSE NO DEFAULT PATH IS GIVEN ANYMORE?
-//ADD BASEDIR TO EACH OF THE DATAS?
+	//HOW TO HANDLE PATHS BECAUSE NO DEFAULT PATH IS GIVEN ANYMORE?
+	//ADD BASEDIR TO EACH OF THE DATAS?
 
 	tree = DTH:get_directory_roots(col_list, 1, dt_temp, ., Tree Box({}, size(500, 600)), data_to_add = folder);
 	Close(dt_temp, no save);
@@ -92,9 +120,14 @@ For Each({folder, idx}, uniq_dirs,
 				Border Box(Left(0), Right(0), top(0), bottom(0), sides(15),
 					H List Box(
 						align("center"),
-						teb = Text Edit Box("", <<Set Min Size(100, -1), <<Set Max Size(450, -1), <<Set Auto Stretching(1, 0), <<Set Hint("Filter...")),
+						teb = Text Edit Box("",
+							<<Set Min Size(100, -1),
+							<<Set Max Size(450, -1),
+							<<Set Auto Stretching(1, 0),
+							<<Set Hint("Filter...")
+						),
 						Button Box("", <<Set Icon("Refresh")),
-						Button Box("", <<Set Icon("TabCloseActive")),
+						Button Box("", <<Set Icon("TabCloseActive")), 
 
 					)
 				),
@@ -137,7 +170,7 @@ For Each({folder, idx}, uniq_dirs,
 						),
 					Is Control Key(), open_node_path(tree, node)
 				)
-			);
+			)
 		)
 	);
 	
@@ -161,7 +194,7 @@ For Each({folder, idx}, uniq_dirs,
 				)}, {"Open with columns", "", Function({tree, node},
 					NH:open_node_file_columns(tree, node)
 				)}, {"Copy Path to Clipboard", "", Function({tree, node},
-					Set Clipboard(get_node_path(tree, node))
+					Set Clipboard(NH:get_node_path(tree, node))
 				)}, {"Open Directory", "", Function({tree, node},
 					NH:open_node_directory(tree, node)
 				)}, {"Get file info", "", Function({tree, node},
