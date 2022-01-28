@@ -21,8 +21,6 @@
 
 // oma välilehti, johon haetaan recent files
 
-
-
 // create new window... with possibility to filter further down?
 
 search_tree = function({teb, dt, root_dir, tb_found}, {Default Local},
